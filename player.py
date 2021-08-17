@@ -1,11 +1,19 @@
 import vlc
+import glob
 import os
+import time
 import threading
 import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.scrolledtext as st
 from tkinter.filedialog import askopenfilenames
 import TkinterDnD2 as tkdnd
+
+
+def ms_to_min(ms):
+    m, s = divmod(ms / 1000, 60)
+    h, m = divmod(m, 60)
+    return str(round(h)).zfill(2) + ":" + str(round(m)).zfill(2) + ":" + str(round(s)).zfill(2)
 
 
 class PyPlayer(tk.Frame):
@@ -29,6 +37,7 @@ class PyPlayer(tk.Frame):
                                    length=450,
                                    from_=0.0,
                                    to=1.0)
+        self.pos_seeker.bind('<MouseWheel>', self.pos_wheel)
         self.pos_seeker.pack()
 
         self.create_media_panel()
@@ -56,18 +65,15 @@ class PyPlayer(tk.Frame):
                                    length=450,
                                    from_=0,
                                    to=100)
+        self.volume_bar.bind('<MouseWheel>', self.volume_wheel)
         self.volume_bar.pack()
+
+        self.master.bind('<KeyPress>', self.key_event)
 
         self.thread1 = threading.Thread(target=self.recursive_update_seeker)
         self.thread1.start()
         self.thread2 = threading.Thread(target=self.recursive_update_now_playing)
         self.thread2.start()
-
-    def ms_to_min(self, ms):
-        m, s = divmod(ms / 1000, 60)
-        h, m = divmod(m, 60)
-        return str(round(h)).zfill(2) + ":" + str(round(m)).zfill(2) + ":" + str(round(s)).zfill(2)
-
 
     def create_menu(self):
         self.menu_bar = tk.Menu(self.master)
@@ -92,8 +98,11 @@ class PyPlayer(tk.Frame):
     def create_palylist_panel(self):
         self.palylist_panel = ttk.Frame(self.master)
         self.palylist_panel.pack()
-        self.playlist_log = st.ScrolledText(self.palylist_panel)
-        self.playlist_log.configure(state='disable')
+        self.playlist_log = st.ScrolledText(self.palylist_panel,
+                                            cursor='hand2',
+                                            selectbackground='white',
+                                            selectforeground='black',
+                                            state='disable')
         self.playlist_log.pack()
 
     def create_media_panel(self):
@@ -114,9 +123,18 @@ class PyPlayer(tk.Frame):
                 self.update_playlist_log()
 
     def clear_one(self):
-        self.media_list.remove_index(0)
-        self.player.set_media_list(self.media_list)
-        self.update_playlist_log()
+        txt = tk.Entry(width=20)
+        txt.place(x=350, y=0)
+        btn = tk.Button(text="Remove", command=lambda: [self.remove_at_index(txt.get() + 1), txt.destroy(), btn.destroy()])
+        btn.place(x=400, y=0)
+
+    def remove_at_index(self, idx):
+        try:
+            self.media_list.remove_index(int(idx))
+            self.player.set_media_list(self.media_list)
+            self.update_playlist_log()
+        except:
+            return
 
     def clear_playlist(self):
         for i in range(self.media_list.count()):
@@ -124,23 +142,38 @@ class PyPlayer(tk.Frame):
         self.player.set_media_list(self.media_list)
         self.update_playlist_log()
 
-    def drop_enter(self, event):
+    def drop_enter(self, event=None):
         self.master.focus_force()
 
     def drop(self, event):
         if event.data:
-            files = event.data.strip('{}').split('} {')
-            for file in files:
-                media = vlc.Media(file)
-                self.media_list.add_media(media)
-                self.player.set_media_list(self.media_list)
-                self.update_playlist_log()
+            paths = event.data.strip('{}').split('} {')
+            for path in paths:
+                if os.path.isdir(path):
+                    found = []
+                    for base, dirs, files in os.walk(path):
+                        for filename in files:
+                            found.append(os.path.join(base, filename))
+                        for dirname in dirs:
+                            found.append(os.path.join(base, dirname))
+                    # for file in glob.glob(path + '/**/*', recursive=True): # Not working on path with escape char
+                    for file in found:
+                        if not os.path.isdir(file) and os.path.splitext(file)[1] in self.type[0][1]:
+                            media = vlc.Media(file)
+                            self.media_list.add_media(media)
+                            self.player.set_media_list(self.media_list)
+                            self.update_playlist_log()
+                else:
+                    if os.path.splitext(path)[1] in self.type[0][1]:
+                        media = vlc.Media(path)
+                        self.media_list.add_media(media)
+                        self.player.set_media_list(self.media_list)
+                        self.update_playlist_log()
 
     def play_pause(self):
         if self.play_button['text'] == "Play":
             self.play_button['text'] = "Pause"
             self.player.play()
-
         elif self.play_button['text'] == "Pause":
             self.play_button['text'] = "Play"
             self.player.pause()
@@ -171,11 +204,37 @@ class PyPlayer(tk.Frame):
         if self.play_button['text'] == "Play":
             self.play_button['text'] = "Pause"
 
+    def key_event(self, event):
+        key = event.keysym
+        if key == "Up":
+            self.previous()
+        elif key == "Down":
+            self.next()
+        elif key == "Right":
+            period = self.media_pos.get() + 5 / (self.player.get_media_player().get_length() / 1000)
+            self.player.get_media_player().set_position(period)
+            self.media_pos.set(period)
+        elif key == "Left":
+            period = self.media_pos.get() - 5 / (self.player.get_media_player().get_length() / 1000)
+            self.player.get_media_player().set_position(period)
+            self.media_pos.set(period)
+        elif key == "space":
+            self.play_pause()
+
     def set_position(self, event=None):
         self.player.get_media_player().set_position(float(self.media_pos.get()))
 
     def set_volume(self, event=None):
         self.player.get_media_player().audio_set_volume(int(self.volume.get()))
+
+    def pos_wheel(self, event=None):
+        period = self.media_pos.get() + (event.delta/24) / (self.player.get_media_player().get_length()/1000)
+        self.player.get_media_player().set_position(period)
+        self.media_pos.set(period)
+
+    def volume_wheel(self, event=None):
+        self.volume.set(self.volume.get() + event.delta/60)
+        self.set_volume()
 
     def get_now_playing(self):
         if self.player.get_media_player().get_media() is not None:
@@ -196,12 +255,24 @@ class PyPlayer(tk.Frame):
         for i in range(self.media_list.count()):
             log = self.media_list.item_at_index(i).get_meta(vlc.Meta.Title)
             self.playlist_log.insert('end', log + "\n", i)
+            self.playlist_log.tag_bind(str(i), '<Double-Button-1>', self.play_selected)
+            self.playlist_log.tag_bind(str(i), '<Double-Button-3>', self.remove_selected)
         self.playlist_log.configure(state='disable')
+
+    def remove_selected(self, event=None):
+        line = int(float(self.playlist_log.index('current')))
+        self.remove_at_index(line - 1)
+
+    def play_selected(self, event=None):
+        line = int(float(self.playlist_log.index('current')))
+        self.player.play_item_at_index(line-1)
+        self.update_now_playing()
 
     def recursive_update_seeker(self):
         pos = self.player.get_media_player().get_position()
         self.media_pos.set(pos)
-        self.pos_seeker['label'] = self.ms_to_min(self.player.get_media_player().get_time())
+        self.pos_seeker['label'] = ms_to_min(self.player.get_media_player().get_time()) + "/" + \
+                                   ms_to_min(self.player.get_media_player().get_length())
         self.after(1000, self.recursive_update_seeker)
 
     def recursive_update_now_playing(self):
