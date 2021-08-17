@@ -179,18 +179,6 @@ class PyPlayer(tk.Frame):
 
         self.update_now_playing()
 
-    def play(self):
-        self.player.stop()
-        self.player.play()
-
-    def stop(self):
-        self.player.stop()
-        if self.play_button['text'] == "Pause":
-            self.play_button['text'] = "Play"
-
-    def pause(self):
-        self.player.pause()
-
     def next(self):
         self.player.next()
         self.update_now_playing()
