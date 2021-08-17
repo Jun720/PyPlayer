@@ -1,7 +1,5 @@
 import vlc
-import glob
 import os
-import time
 import threading
 import tkinter as tk
 import tkinter.ttk as ttk
@@ -21,7 +19,7 @@ class PyPlayer(tk.Frame):
         super().__init__(master)
 
         self.master.title("PyPlayer")
-        self.master.geometry("500x500")
+        self.master.geometry("500x330")
         self.pack()
         self.create_menu()
         self.create_palylist_panel()
@@ -100,6 +98,7 @@ class PyPlayer(tk.Frame):
         self.palylist_panel.pack()
         self.playlist_log = st.ScrolledText(self.palylist_panel,
                                             cursor='hand2',
+                                            height=10,
                                             selectbackground='white',
                                             selectforeground='black',
                                             state='disable')
@@ -125,7 +124,7 @@ class PyPlayer(tk.Frame):
     def clear_one(self):
         txt = tk.Entry(width=20)
         txt.place(x=350, y=0)
-        btn = tk.Button(text="Remove", command=lambda: [self.remove_at_index(txt.get() + 1), txt.destroy(), btn.destroy()])
+        btn = tk.Button(text="Remove", command=lambda: [self.remove_at_index(txt.get()), txt.destroy(), btn.destroy()])
         btn.place(x=400, y=0)
 
     def remove_at_index(self, idx):
@@ -156,7 +155,7 @@ class PyPlayer(tk.Frame):
                             found.append(os.path.join(base, filename))
                         for dirname in dirs:
                             found.append(os.path.join(base, dirname))
-                    # for file in glob.glob(path + '/**/*', recursive=True): # Not working on path with escape char
+
                     for file in found:
                         if not os.path.isdir(file) and os.path.splitext(file)[1] in self.type[0][1]:
                             media = vlc.Media(file)
