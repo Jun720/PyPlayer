@@ -1,6 +1,8 @@
 import vlc
 import os
 import threading
+import random
+import time
 import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.scrolledtext as st
@@ -29,7 +31,7 @@ class PyPlayer(tk.Frame):
         self.media_pos.set(0)
         self.pos_seeker = tk.Scale(self.master,
                                    orient='h',
-                                   resolution=0.01,
+                                   resolution=0.001,
                                    variable=self.media_pos,
                                    command=self.set_position,
                                    length=450,
@@ -46,6 +48,14 @@ class PyPlayer(tk.Frame):
         self.player = vlc.MediaListPlayer()
         self.media_list = vlc.MediaList()
         self.player.set_media_list(self.media_list)
+        self.media_player_manager = self.player.get_media_player().event_manager()
+        self.media_list_player_manager = self.player.event_manager()
+        self.media_list_manager = self.media_list.event_manager()
+        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerMediaChanged, self.track_changed_event)
+        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerPlaying, self.played_event)
+        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerPaused, self.paused_event)
+        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerEndReached, self.shuffle_event)
+        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerPositionChanged, self.update_seeker_event)
 
         # Define drag-and-drop event
         self.master.drop_target_register(tkdnd.DND_FILES)
@@ -66,12 +76,10 @@ class PyPlayer(tk.Frame):
         self.volume_bar.bind('<MouseWheel>', self.volume_wheel)
         self.volume_bar.pack()
 
+        # Define key event
         self.master.bind('<KeyPress>', self.key_event)
 
-        self.thread1 = threading.Thread(target=self.recursive_update_seeker)
-        self.thread1.start()
-        self.thread2 = threading.Thread(target=self.recursive_update_now_playing)
-        self.thread2.start()
+        self.shuffle_flag = False
 
     def create_menu(self):
         self.menu_bar = tk.Menu(self.master)
@@ -86,7 +94,7 @@ class PyPlayer(tk.Frame):
     def create_control_panel(self):
         self.control_panel = ttk.Frame(self.master)
         self.control_panel.pack()
-        self.shuffle_button = ttk.Button(self.control_panel, text="Shuffle:off", takefocus=False, command=self.shuffle)
+        self.shuffle_button = ttk.Button(self.control_panel, text="Shuffle:off", takefocus=False, command=self.shuffle_switch)
         self.shuffle_button.pack(side='left')
         self.previous_button = ttk.Button(self.control_panel, text="Pre", takefocus=False, command=self.previous)
         self.previous_button.pack(side='left')
@@ -177,33 +185,35 @@ class PyPlayer(tk.Frame):
     def play_pause(self):
         if self.player.get_media_player().is_playing():
             self.player.pause()
-            self.play_button['text'] = "Play"
         else:
             self.player.play()
-            self.play_button['text'] = "Pause"
-
-        self.update_now_playing()
 
     def next(self):
+        if self.shuffle_flag is True:
+            self.shuffle_play()
+            return
         self.player.next()
-        self.update_now_playing()
 
     def previous(self):
+        if self.shuffle_flag is True:
+            self.shuffle_play()
+            return
         self.player.previous()
-        self.update_now_playing()
 
-    def shuffle(self):
+    def shuffle_play(self):
+        rand = random.randrange(self.media_list.count())
+        time.sleep(0.01)
+        self.player.play_item_at_index(rand)
 
-        temp = list()
-        print(self.media_list.count())
-        print(len(self.media_list))
-        if self.shuffle_button['text'] == "Shuffle:on":
+    def shuffle_switch(self):
+        if self.shuffle_flag is True:
+            self.shuffle_flag = False
             self.shuffle_button['default'] = 'normal'
             self.shuffle_button['text'] = 'Shuffle:off'
         else:
+            self.shuffle_flag = True
             self.shuffle_button['default'] = 'active'
             self.shuffle_button['text'] = 'Shuffle:on'
-            print(self.shuffle_button['default'])
 
     def change_playback_mode(self):
         if self.playback_button['text'] == "Normal":
@@ -253,17 +263,12 @@ class PyPlayer(tk.Frame):
 
     def update_now_playing(self):
         playing = self.get_now_playing()
-        if playing is not None and self.now_playing.cget('text') != playing.get_meta(vlc.Meta.Title):
+        if playing is not None:
             self.now_playing['text'] = playing.get_meta(vlc.Meta.Title)
             idx = self.media_list.index_of_item(playing)
             for i in range(self.media_list.count()):
                 self.playlist_log.tag_config(i, foreground="black")
             self.playlist_log.tag_config(str(idx), foreground="blue")
-
-        if self.player.get_media_player().is_playing():
-            self.play_button['text'] = "Pause"
-        else:
-            self.play_button['text'] = "Play"
 
     def update_playlist_log(self):
         self.playlist_log.configure(state='normal')
@@ -282,19 +287,30 @@ class PyPlayer(tk.Frame):
     def play_selected(self, event=None):
         line = int(float(self.playlist_log.index('current')))
         self.player.play_item_at_index(line-1)
+
+    @vlc.callbackmethod
+    def played_event(self, event=None):
         self.play_button['text'] = "Pause"
+
+    @vlc.callbackmethod
+    def paused_event(self, event=None):
+        self.play_button['text'] = "Play"
+
+    @vlc.callbackmethod
+    def track_changed_event(self, event=None):
         self.update_now_playing()
 
-    def recursive_update_seeker(self):
-        pos = self.player.get_media_player().get_position()
-        self.media_pos.set(pos)
+    @vlc.callbackmethod
+    def shuffle_event(self, event=None):
+        if self.shuffle_flag is True:
+            thread = threading.Thread(target=self.shuffle_event)
+            thread.start()
+
+    @vlc.callbackmethod
+    def update_seeker_event(self, event=None):
+        self.media_pos.set(self.player.get_media_player().get_position())
         self.pos_seeker['label'] = ms_to_min(self.player.get_media_player().get_time()) + "/" + \
                                    ms_to_min(self.player.get_media_player().get_length())
-        self.after(1000, self.recursive_update_seeker)
-
-    def recursive_update_now_playing(self):
-        self.update_now_playing()
-        self.after(10000, self.recursive_update_now_playing)
 
 
 if __name__ == '__main__':
