@@ -22,7 +22,7 @@ class PyPlayer(tk.Frame):
         self.master.geometry("500x330")
         self.pack()
         self.create_menu()
-        self.create_palylist_panel()
+        self.create_playlist_panel()
 
         # Set media seek bar
         self.media_pos = tk.DoubleVar()
@@ -86,17 +86,21 @@ class PyPlayer(tk.Frame):
     def create_control_panel(self):
         self.control_panel = ttk.Frame(self.master)
         self.control_panel.pack()
-        self.previous_button = ttk.Button(self.control_panel, text="Pre", command=self.previous)
+        self.shuffle_button = ttk.Button(self.control_panel, text="Shuffle:off", takefocus=False, command=self.shuffle)
+        self.shuffle_button.pack(side='left')
+        self.previous_button = ttk.Button(self.control_panel, text="Pre", takefocus=False, command=self.previous)
         self.previous_button.pack(side='left')
-        self.play_button = ttk.Button(self.control_panel, text="Play", command=self.play_pause)
+        self.play_button = ttk.Button(self.control_panel, text="Play", takefocus=False, command=self.play_pause)
         self.play_button.pack(side='left')
-        self.next_button = ttk.Button(self.control_panel, text="Next", command=self.next)
+        self.next_button = ttk.Button(self.control_panel, text="Next", takefocus=False, command=self.next)
         self.next_button.pack(side='left')
+        self.playback_button = ttk.Button(self.control_panel, text="Normal", takefocus=False, command=self.change_playback_mode)
+        self.playback_button.pack(side='left')
 
-    def create_palylist_panel(self):
-        self.palylist_panel = ttk.Frame(self.master)
-        self.palylist_panel.pack()
-        self.playlist_log = st.ScrolledText(self.palylist_panel,
+    def create_playlist_panel(self):
+        self.playlist_panel = ttk.Frame(self.master)
+        self.playlist_panel.pack()
+        self.playlist_log = st.ScrolledText(self.playlist_panel,
                                             cursor='hand2',
                                             height=10,
                                             selectbackground='white',
@@ -132,6 +136,7 @@ class PyPlayer(tk.Frame):
             self.media_list.remove_index(int(idx))
             self.player.set_media_list(self.media_list)
             self.update_playlist_log()
+            self.update_now_playing()
         except:
             return
 
@@ -170,26 +175,48 @@ class PyPlayer(tk.Frame):
                         self.update_playlist_log()
 
     def play_pause(self):
-        if self.play_button['text'] == "Play":
-            self.play_button['text'] = "Pause"
-            self.player.play()
-        elif self.play_button['text'] == "Pause":
-            self.play_button['text'] = "Play"
+        if self.player.get_media_player().is_playing():
             self.player.pause()
+            self.play_button['text'] = "Play"
+        else:
+            self.player.play()
+            self.play_button['text'] = "Pause"
 
         self.update_now_playing()
 
     def next(self):
         self.player.next()
         self.update_now_playing()
-        if self.play_button['text'] == "Play":
-            self.play_button['text'] = "Pause"
 
     def previous(self):
         self.player.previous()
         self.update_now_playing()
-        if self.play_button['text'] == "Play":
-            self.play_button['text'] = "Pause"
+
+    def shuffle(self):
+
+        temp = list()
+        print(self.media_list.count())
+        print(len(self.media_list))
+        if self.shuffle_button['text'] == "Shuffle:on":
+            self.shuffle_button['default'] = 'normal'
+            self.shuffle_button['text'] = 'Shuffle:off'
+        else:
+            self.shuffle_button['default'] = 'active'
+            self.shuffle_button['text'] = 'Shuffle:on'
+            print(self.shuffle_button['default'])
+
+    def change_playback_mode(self):
+        if self.playback_button['text'] == "Normal":
+            self.player.set_playback_mode(vlc.PlaybackMode.repeat)
+            self.playback_button['default'] = 'active'
+            self.playback_button['text'] = "Repeat"
+        elif self.playback_button['text'] == "Repeat":
+            self.player.set_playback_mode(vlc.PlaybackMode.loop)
+            self.playback_button['text'] = "Loop"
+        else:
+            self.player.set_playback_mode(vlc.PlaybackMode.default)
+            self.playback_button['default'] = 'normal'
+            self.playback_button['text'] = "Normal"
 
     def key_event(self, event):
         key = event.keysym
@@ -198,13 +225,11 @@ class PyPlayer(tk.Frame):
         elif key == "Down":
             self.next()
         elif key == "Right":
-            period = self.media_pos.get() + 5 / (self.player.get_media_player().get_length() / 1000)
-            self.player.get_media_player().set_position(period)
-            self.media_pos.set(period)
+            self.player.get_media_player().set_time(self.player.get_media_player().get_time() + 5000)
+            self.media_pos.set(self.player.get_media_player().get_position())
         elif key == "Left":
-            period = self.media_pos.get() - 5 / (self.player.get_media_player().get_length() / 1000)
-            self.player.get_media_player().set_position(period)
-            self.media_pos.set(period)
+            self.player.get_media_player().set_time(self.player.get_media_player().get_time() - 5000)
+            self.media_pos.set(self.player.get_media_player().get_position())
         elif key == "space":
             self.play_pause()
 
@@ -214,12 +239,11 @@ class PyPlayer(tk.Frame):
     def set_volume(self, event=None):
         self.player.get_media_player().audio_set_volume(int(self.volume.get()))
 
-    def pos_wheel(self, event=None):
-        period = self.media_pos.get() + (event.delta/24) / (self.player.get_media_player().get_length()/1000)
-        self.player.get_media_player().set_position(period)
-        self.media_pos.set(period)
+    def pos_wheel(self, event):
+        self.player.get_media_player().set_time(self.player.get_media_player().get_time() - int(5000*event.delta/120))
+        self.media_pos.set(self.player.get_media_player().get_position())
 
-    def volume_wheel(self, event=None):
+    def volume_wheel(self, event):
         self.volume.set(self.volume.get() + event.delta/60)
         self.set_volume()
 
@@ -229,12 +253,17 @@ class PyPlayer(tk.Frame):
 
     def update_now_playing(self):
         playing = self.get_now_playing()
-        if playing is not None and self.now_playing.cget("text") != playing.get_meta(vlc.Meta.Title):
+        if playing is not None and self.now_playing.cget('text') != playing.get_meta(vlc.Meta.Title):
             self.now_playing['text'] = playing.get_meta(vlc.Meta.Title)
             idx = self.media_list.index_of_item(playing)
             for i in range(self.media_list.count()):
                 self.playlist_log.tag_config(i, foreground="black")
             self.playlist_log.tag_config(str(idx), foreground="blue")
+
+        if self.player.get_media_player().is_playing():
+            self.play_button['text'] = "Pause"
+        else:
+            self.play_button['text'] = "Play"
 
     def update_playlist_log(self):
         self.playlist_log.configure(state='normal')
@@ -253,6 +282,7 @@ class PyPlayer(tk.Frame):
     def play_selected(self, event=None):
         line = int(float(self.playlist_log.index('current')))
         self.player.play_item_at_index(line-1)
+        self.play_button['text'] = "Pause"
         self.update_now_playing()
 
     def recursive_update_seeker(self):
