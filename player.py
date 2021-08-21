@@ -1,4 +1,5 @@
 import vlc
+import sys
 import os
 import threading
 import random
@@ -19,6 +20,21 @@ def ms_to_min(ms):
 class PyPlayer(tk.Frame):
     def __init__(self, master=None):
         super().__init__(master)
+
+        self.type = [("", "*.flac;*.mp3;*.wav;*.m4a")]
+        self.init_dir = os.path.abspath(os.path.dirname(__file__))
+        self.player = vlc.MediaListPlayer()
+        self.media_list = vlc.MediaList()
+        self.media_player_manager = self.player.get_media_player().event_manager()
+        self.media_list_player_manager = self.player.event_manager()
+        self.media_list_manager = self.media_list.event_manager()
+        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerMediaChanged, self.track_changed_event)
+        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerPlaying, self.played_event)
+        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerPaused, self.paused_event)
+        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerEndReached, self.shuffle_event)
+        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerPositionChanged, self.update_seeker_event)
+        self.media_list_manager.event_attach(vlc.EventType.MediaListItemAdded, self.playlist_changed_event)
+        self.media_list_manager.event_attach(vlc.EventType.MediaListItemDeleted, self.playlist_changed_event)
 
         self.master.title("PyPlayer")
         self.master.geometry("500x330")
@@ -43,22 +59,6 @@ class PyPlayer(tk.Frame):
         self.create_media_panel()
         self.create_control_panel()
 
-        self.type = [("", "*.flac;*.mp3;*.wav;*.m4a")]
-        self.init_dir = os.path.abspath(os.path.dirname(__file__))
-        self.player = vlc.MediaListPlayer()
-        self.media_list = vlc.MediaList()
-        self.player.set_media_list(self.media_list)
-        self.media_player_manager = self.player.get_media_player().event_manager()
-        self.media_list_player_manager = self.player.event_manager()
-        self.media_list_manager = self.media_list.event_manager()
-        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerMediaChanged, self.track_changed_event)
-        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerPlaying, self.played_event)
-        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerPaused, self.paused_event)
-        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerEndReached, self.shuffle_event)
-        self.media_player_manager.event_attach(vlc.EventType.MediaPlayerPositionChanged, self.update_seeker_event)
-        self.media_list_manager.event_attach(vlc.EventType.MediaListItemAdded, self.playlist_changed_event)
-        self.media_list_manager.event_attach(vlc.EventType.MediaListItemDeleted, self.playlist_changed_event)
-
         # Define drag-and-drop event
         self.master.drop_target_register(tkdnd.DND_FILES)
         self.master.dnd_bind('<<DropEnter>>', self.drop_enter)
@@ -82,6 +82,10 @@ class PyPlayer(tk.Frame):
         self.master.bind('<KeyPress>', self.key_event)
 
         self.shuffle_flag = False
+
+        args = sys.argv
+        for i in range(1, len(args)):
+            self.add_path_to_playlist(args[i])
 
     def create_menu(self):
         self.menu_bar = tk.Menu(self.master)
@@ -130,9 +134,7 @@ class PyPlayer(tk.Frame):
         files = askopenfilenames(filetypes=self.type, initialdir=self.init_dir)
         if files != "":
             for file in files:
-                media = vlc.Media(file)
-                self.media_list.add_media(media)
-                self.player.set_media_list(self.media_list)
+                self.add_file_to_playlist(file)
 
     def clear_one(self):
         txt = tk.Entry(width=20)
@@ -162,24 +164,27 @@ class PyPlayer(tk.Frame):
         if event.data:
             paths = event.data.strip('{}').split('} {')
             for path in paths:
-                if os.path.isdir(path):
-                    found = []
-                    for base, dirs, files in os.walk(path):
-                        for filename in files:
-                            found.append(os.path.join(base, filename))
-                        for dirname in dirs:
-                            found.append(os.path.join(base, dirname))
+                self.add_path_to_playlist(path)
 
-                    for file in found:
-                        if not os.path.isdir(file) and os.path.splitext(file)[1] in self.type[0][1]:
-                            media = vlc.Media(file)
-                            self.media_list.add_media(media)
-                            self.player.set_media_list(self.media_list)
-                else:
-                    if os.path.splitext(path)[1] in self.type[0][1]:
-                        media = vlc.Media(path)
-                        self.media_list.add_media(media)
-                        self.player.set_media_list(self.media_list)
+    def add_file_to_playlist(self, path):
+        if not os.path.isdir(path) and os.path.splitext(path)[1] in self.type[0][1]:
+            media = vlc.Media(path)
+            self.media_list.add_media(media)
+            self.player.set_media_list(self.media_list)
+
+    def add_path_to_playlist(self, path):
+        if os.path.isdir(path):
+            found = []
+            for base, dirs, files in os.walk(path):
+                for filename in files:
+                    found.append(os.path.join(base, filename))
+                for dirname in dirs:
+                    found.append(os.path.join(base, dirname))
+
+            for file in found:
+                self.add_file_to_playlist(file)
+        else:
+            self.add_file_to_playlist(path)
 
     def play_pause(self):
         if self.player.get_media_player().is_playing():
