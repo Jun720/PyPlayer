@@ -56,6 +56,8 @@ class PyPlayer(tk.Frame):
         self.media_player_manager.event_attach(vlc.EventType.MediaPlayerPaused, self.paused_event)
         self.media_player_manager.event_attach(vlc.EventType.MediaPlayerEndReached, self.shuffle_event)
         self.media_player_manager.event_attach(vlc.EventType.MediaPlayerPositionChanged, self.update_seeker_event)
+        self.media_list_manager.event_attach(vlc.EventType.MediaListItemAdded, self.playlist_changed_event)
+        self.media_list_manager.event_attach(vlc.EventType.MediaListItemDeleted, self.playlist_changed_event)
 
         # Define drag-and-drop event
         self.master.drop_target_register(tkdnd.DND_FILES)
@@ -131,19 +133,19 @@ class PyPlayer(tk.Frame):
                 media = vlc.Media(file)
                 self.media_list.add_media(media)
                 self.player.set_media_list(self.media_list)
-                self.update_playlist_log()
 
     def clear_one(self):
         txt = tk.Entry(width=20)
         txt.place(x=350, y=0)
+        txt.focus_set()
         btn = tk.Button(text="Remove", command=lambda: [self.remove_at_index(txt.get()), txt.destroy(), btn.destroy()])
+        txt.bind('<Return>', btn['command'])
         btn.place(x=400, y=0)
 
     def remove_at_index(self, idx):
         try:
             self.media_list.remove_index(int(idx))
             self.player.set_media_list(self.media_list)
-            self.update_playlist_log()
             self.update_now_playing()
         except:
             return
@@ -152,7 +154,6 @@ class PyPlayer(tk.Frame):
         for i in range(self.media_list.count()):
             self.media_list.remove_index(0)
         self.player.set_media_list(self.media_list)
-        self.update_playlist_log()
 
     def drop_enter(self, event=None):
         self.master.focus_force()
@@ -174,13 +175,11 @@ class PyPlayer(tk.Frame):
                             media = vlc.Media(file)
                             self.media_list.add_media(media)
                             self.player.set_media_list(self.media_list)
-                            self.update_playlist_log()
                 else:
                     if os.path.splitext(path)[1] in self.type[0][1]:
                         media = vlc.Media(path)
                         self.media_list.add_media(media)
                         self.player.set_media_list(self.media_list)
-                        self.update_playlist_log()
 
     def play_pause(self):
         if self.player.get_media_player().is_playing():
@@ -202,7 +201,7 @@ class PyPlayer(tk.Frame):
 
     def shuffle_play(self):
         rand = random.randrange(self.media_list.count())
-        time.sleep(0.01)
+        time.sleep(0.05)
         self.player.play_item_at_index(rand)
 
     def shuffle_switch(self):
@@ -303,7 +302,7 @@ class PyPlayer(tk.Frame):
     @vlc.callbackmethod
     def shuffle_event(self, event=None):
         if self.shuffle_flag is True:
-            thread = threading.Thread(target=self.shuffle_event)
+            thread = threading.Thread(target=self.shuffle_play)
             thread.start()
 
     @vlc.callbackmethod
@@ -311,6 +310,10 @@ class PyPlayer(tk.Frame):
         self.media_pos.set(self.player.get_media_player().get_position())
         self.pos_seeker['label'] = ms_to_min(self.player.get_media_player().get_time()) + "/" + \
                                    ms_to_min(self.player.get_media_player().get_length())
+
+    @vlc.callbackmethod
+    def playlist_changed_event(self, event=None):
+        self.update_playlist_log()
 
 
 if __name__ == '__main__':
